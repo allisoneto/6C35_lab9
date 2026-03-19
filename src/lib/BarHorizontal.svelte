@@ -8,7 +8,7 @@
 
     // Wider left margin to accommodate Language labels on y-axis;
     // smaller bottom margin since x-axis tick labels are short numerics (no rotation needed)
-    let margin = { top: 40, right: 150, bottom: 50, left: 60 };
+    let margin = { top: 40, right: 50, bottom: 50, left: 60 };
 
     let innerWidth  = width  - margin.left - margin.right;
     let innerHeight = height - margin.top  - margin.bottom;

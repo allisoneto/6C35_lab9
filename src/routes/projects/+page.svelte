@@ -32,13 +32,11 @@
 
   </script>
 
-<section>
+<!-- <section>
   <h2>Data wrangling result</h2>
   <pre>{JSON.stringify(wrangled, null, 2)}</pre>
   <pre>{JSON.stringify(wrangled_percentages, null, 2)}</pre>
-</section>
-
-<Bar data={barData} />
+</section> -->
 
 <svelte:head>
   <title>Projects</title>
@@ -46,6 +44,7 @@
 
 <h1>{projects.length} Projects over {range} Years</h1>
 
+<Bar data={barData} />
 
 <p>Scroll down to see my a timeline of my projects and how they've contributed to my professional and personal life</p>
 
