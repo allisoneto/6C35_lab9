@@ -1,17 +1,25 @@
 <script>
     import * as d3 from 'd3';
 
-    let width = 400;
-    let height = 300;
-
     export let data = [];
+    export let height = 300;
+    export let title = "Lines per Language";
+    let width = 400;
+
+    $: fontSizeScaler = height / 300;
+    $: offsetScaler = height / 500;
 
     // Wider left margin to accommodate Language labels on y-axis;
     // smaller bottom margin since x-axis tick labels are short numerics (no rotation needed)
-    let margin = { top: 40, right: 50, bottom: 50, left: 60 };
+    $: margin = { 
+        top: Math.round(40 * fontSizeScaler), 
+        right: Math.round(50 * fontSizeScaler), 
+        bottom: Math.round(60 * fontSizeScaler), 
+        left: Math.round(60 * fontSizeScaler) 
+    };
 
-    let innerWidth  = width  - margin.left - margin.right;
-    let innerHeight = height - margin.top  - margin.bottom;
+    $: innerWidth  = width  - margin.left - margin.right;
+    $: innerHeight = height - margin.top  - margin.bottom;
 
     let xAxis, yAxis;
 
@@ -47,7 +55,7 @@
 
 </script>
 
-<div class="container">
+<div class="container" style="--font-size-scaler: {fontSizeScaler}">
     <svg viewBox="0 0 {width} {height}">
 
         <g transform="translate({margin.left}, {margin.top})">
@@ -78,14 +86,14 @@
                     x1={xScale(maxBar.value / 2)}
                     y1={yScale(maxBar.label) + yScale.bandwidth()}
                     x2={xScale(maxBar.value / 2)}
-                    y2={yScale(maxBar.label) + yScale.bandwidth() + 30}
+                    y2={yScale(maxBar.label) + yScale.bandwidth() + 30 * offsetScaler}
                     stroke="currentColor"
                     stroke-width="1"
                 />
                 <!-- annotation text below the end of leader line -->
                 <text
                     x={xScale(maxBar.value / 2)}
-                    y={yScale(maxBar.label) + yScale.bandwidth() + 35}
+                    y={yScale(maxBar.label) + yScale.bandwidth() + 35 * offsetScaler}
                     text-anchor="middle"
                     dominant-baseline="hanging"
                     class="annotation">
@@ -100,15 +108,15 @@
             y={margin.top / 2}
             text-anchor="middle"
             class="chart-title">
-            Lines per Language
+            {title}
         </text>
 
         <!-- xAxis sits at the bottom of the inner plot area -->
         <g transform="translate({margin.left}, {margin.top + innerHeight})"
-            bind:this={xAxis} />
+            bind:this={xAxis} class="tick-label"/>
         <!-- yAxis sits at the left edge of the inner plot area -->
         <g transform="translate({margin.left}, {margin.top})"
-            bind:this={yAxis} />
+            bind:this={yAxis} class="tick-label"/>
 
         <!-- x-axis label -->
         <text
@@ -150,20 +158,24 @@
     }
 
     .chart-title {
-        font-size: 1em;
+        font-size: calc(var(--font-size-scaler, 1) * 1em);
         font-weight: bold;
         fill: currentColor;
     }
 
     .axis-label {
-        font-size: 0.8em;
+        font-size: calc(var(--font-size-scaler, 1) * 0.8em);
         fill: currentColor;
     }
 
     .annotation {
-        font-size: 0.7em;
+        font-size: calc(var(--font-size-scaler, 1) * 0.7em);
         fill: black;
         font-style: italic;
+    }
+
+    .tick-label {
+        font-size: calc(var(--font-size-scaler, 1) * 0.8em);
     }
 
     .container {
@@ -178,6 +190,7 @@
         list-style: none;
         padding: 0;
         margin: 0;
+        margin-top: 1.5rem;
     }
 
     .legend li {
