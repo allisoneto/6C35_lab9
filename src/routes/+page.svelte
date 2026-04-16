@@ -170,7 +170,10 @@
 </label>
 
 <div id="map">
-    <svg>
+    <svg
+        on:wheel={e => map.getCanvas().dispatchEvent(new WheelEvent("wheel", e))}
+        on:mousedown={() => selectedStation = null}
+    >
         {#key mapViewChanged}
             {#if isochrone}
                 {#each isochrone.features as feature}
@@ -192,7 +195,7 @@
                     r={radiusScale(station.totalTraffic)}
                     style="--departure-ratio: {station.totalTraffic > 0 ? stationFlow(station.departures / station.totalTraffic) : 0.5}"
                     class={station?.Number === selectedStation?.Number ? "selected" : ""}
-                    on:mousedown={() => selectedStation = selectedStation?.Number !== station?.Number ? station : null}
+                    on:mousedown|stopPropagation={() => selectedStation = selectedStation?.Number !== station?.Number ? station : null}
                 >
                     <title>{station.totalTraffic} trips ({station.departures} departures, {station.arrivals} arrivals)</title>
                 </circle>
