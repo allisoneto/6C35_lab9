@@ -22,14 +22,6 @@ jobs:
       - name: Install dependencies
         run: npm install
       
-      - name: Configure git
-        run: |
-          git config --global user.email "116852822+allisoneto@users.noreply.github.com"
-          git config --global user.name "allisoneto"
-      
-      - name: Generate loc.csv
-        run: npx elocuent -d static,src -o static/loc.csv
-
       - name: build
         env:
           BASE_PATH: "/${{ github.event.repository.name }}"

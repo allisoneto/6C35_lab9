@@ -1,106 +1,259 @@
 <script>
-    import projects from "$lib/projects.json";
-    import Project from "$lib/Project.svelte";
-    import reading from "$lib/reading.json";
-    import ReadingItem from "$lib/ReadingItem.svelte";
-
+    import mapboxgl from "mapbox-gl";
+    import "../../node_modules/mapbox-gl/dist/mapbox-gl.css";
+    import * as d3 from "d3";
     import { onMount } from "svelte";
 
-    let githubData = null; // This will eventually hold our Github stats
-    let loading = true; // This will be true *until* the fetch's promise resolves to a value
-    let error = null; // If the API call resulted in an error, it will go into this variable
+    mapboxgl.accessToken = "pk.eyJ1IjoiYWxsaXNvbmV0byIsImEiOiJjbW8wcXRxNzkwYjduMndweXRoMGlvMnVjIn0.VuzO_BFOqhcY_2Tq543HEg";
 
-    // function retrieveGithubData(){
-    // console.log("Page has been mounted!")
-    // }
-    onMount(async () => {
-            try { // First, try running this block of code
-                console.log("Page has been mounted!")
-                let response = await fetch("https://api.github.com/users/allisoneto");
-                // let response = await {
-                //                         ok: true,
-                //                         json: async () => ({
-                //                             followers: 100,
-                //                             following: 100,
-                //                             public_repos: 100,
-                //                             public_gists: 100,
-                //                         }),
-                //                         };
+    let map;
+    let stations = [];
+    let mapViewChanged = 0;
+    let timeFilter = -1;
+    let selectedStation = null;
+    let isochrone = null;
 
-                console.log(response);
-                githubData = await response.json();
-                console.log(githubData);
-            } catch (err) { // if the "try" block runs into an error, cancel excecution and run this code instead
-                error = err;
-            }
-            loading = false; // don't forget to add this line!
+    const departuresByMinute = Array.from({length: 1440}, () => []);
+    const arrivalsByMinute = Array.from({length: 1440}, () => []);
+
+    $: map?.on("move", () => mapViewChanged++);
+
+    $: timeFilterLabel = new Date(0, 0, 0, 0, timeFilter)
+        .toLocaleString("en", {timeStyle: "short"});
+
+    $: filteredDepartures = timeFilter === -1
+        ? d3.rollup(departuresByMinute.flat(), v => v.length, d => d.start_station_id)
+        : d3.rollup(filterByMinute(departuresByMinute, timeFilter), v => v.length, d => d.start_station_id);
+
+    $: filteredArrivals = timeFilter === -1
+        ? d3.rollup(arrivalsByMinute.flat(), v => v.length, d => d.end_station_id)
+        : d3.rollup(filterByMinute(arrivalsByMinute, timeFilter), v => v.length, d => d.end_station_id);
+
+    $: filteredStations = stations.map(station => {
+        const id = station.Number;
+        const arr = filteredArrivals.get(id) ?? 0;
+        const dep = filteredDepartures.get(id) ?? 0;
+        return { ...station, arrivals: arr, departures: dep, totalTraffic: arr + dep };
+    });
+
+    $: radiusScale = d3.scaleSqrt()
+        .domain([0, d3.max(filteredStations, d => d.totalTraffic) || 0])
+        .range([0, 25]);
+
+    $: stationFlow = d3.scaleQuantize()
+        .domain([0, 1])
+        .range([0, 0.5, 1]);
+
+    $: if (selectedStation) {
+        getIso(+selectedStation.Long, +selectedStation.Lat);
+    } else {
+        isochrone = null;
+    }
+
+    function minutesSinceMidnight(date) {
+        return date.getHours() * 60 + date.getMinutes();
+    }
+
+    function filterByMinute(tripsByMinute, minute) {
+        let minMinute = (minute - 60 + 1440) % 1440;
+        let maxMinute = (minute + 60) % 1440;
+        if (minMinute > maxMinute) {
+            return [...tripsByMinute.slice(minMinute), ...tripsByMinute.slice(0, maxMinute)].flat();
         }
-    );
+        return tripsByMinute.slice(minMinute, maxMinute).flat();
+    }
 
+    function getCoords(station) {
+        let point = new mapboxgl.LngLat(+station.Long, +station.Lat);
+        let {x, y} = map.project(point);
+        return {cx: x, cy: y};
+    }
 
-    // onMount(retrieveGithubData);
+    function geoJSONPolygonToPath(feature) {
+        const path = d3.path();
+        for (const ring of feature.geometry.coordinates) {
+            for (let i = 0; i < ring.length; i++) {
+                const [lng, lat] = ring[i];
+                const {x, y} = map.project([lng, lat]);
+                if (i === 0) path.moveTo(x, y);
+                else path.lineTo(x, y);
+            }
+            path.closePath();
+        }
+        return path.toString();
+    }
 
-    // async function retrieveGithubData(){
-    //     try { // First, try running this block of code
-    //         console.log("Page has been mounted!")
-    //         let response = await fetch("https://api.github.com/users/allisoneto");
-    //         console.log(response);
-    //         githubData = await response.json();
-    //         console.log(githubData);
-    //     } catch (err) { // if the "try" block runs into an error, cancel excecution and run this code instead
-    //         error = err;
-    //     }
-    //     loading = false; // don't forget to add this line!
-    // }
+    async function getIso(lon, lat) {
+        const minutes = [5, 10, 15, 20];
+        const contourColors = ["03045e", "0077b6", "00b4d8", "90e0ef"];
+        const params = new URLSearchParams({
+            contours_minutes: minutes.join(","),
+            contours_colors: contourColors.join(","),
+            polygons: "true",
+            access_token: mapboxgl.accessToken,
+        });
+        const url = `https://api.mapbox.com/isochrone/v1/mapbox/cycling/${lon},${lat}?${params}`;
+        const query = await fetch(url, {method: "GET"});
+        isochrone = await query.json();
+    }
 
-  </script>
+    const bikeLineStyle = {
+        "line-color": "#32D400",
+        "line-width": 3,
+        "line-opacity": 0.4,
+    };
 
-<h1>Allison Eto's 6.C35 Portfolio</h1>
+    async function initMap() {
+        map = new mapboxgl.Map({
+            container: "map",
+            center: [-71.09415, 42.36027],
+            zoom: 12,
+            style: "mapbox://styles/mapbox/streets-v12",
+        });
+        await new Promise(resolve => map.on("load", resolve));
 
-<div class="intro-and-reading">
-    <div class="intro">
-        <p>This is the beginning of Allison Eto's personal portfolio for MIT's 6.C35 course - Interactive Data Visualization and Society.
-            Completed assignments and visualizations will be posted here, as well as some information about Allison.
-        </p>
+        map.addSource("boston_route", {
+            type: "geojson",
+            data: "https://bostonopendata-boston.opendata.arcgis.com/datasets/boston::existing-bike-network-2022.geojson?outSR=%7B%22latestWkid%22%3A3857%2C%22wkid%22%3A102100%7D",
+        });
+        map.addLayer({
+            id: "boston_bike_lanes",
+            type: "line",
+            source: "boston_route",
+            paint: bikeLineStyle,
+        });
 
-        <p>It is currently under development.</p>
+        map.addSource("cambridge_route", {
+            type: "geojson",
+            data: "https://raw.githubusercontent.com/cambridgegis/cambridgegis_data/main/Recreation/Bike_Facilities/RECREATION_BikeFacilities.geojson",
+        });
+        map.addLayer({
+            id: "cambridge_bike_lanes",
+            type: "line",
+            source: "cambridge_route",
+            paint: bikeLineStyle,
+        });
 
-        <img src="images/allison_w_snowman.jpeg" alt="Allison kneeling next to a small snowman" width="500">
-    </div>
+        stations = await d3.csv("https://vis-society.github.io/labs/9/data/bluebikes-stations.csv");
 
-    <aside class="reading-sidebar">
-        <h2>What I'm Reading</h2>
-        <div class="reading">
-            {#each reading.slice(0, 3) as r}
-            <ReadingItem data={r} />
+        let trips = await d3.csv("https://vis-society.github.io/labs/9/data/bluebikes-traffic-2024-03.csv", trip => {
+            trip.started_at = new Date(trip.started_at);
+            trip.ended_at = new Date(trip.ended_at);
+            return trip;
+        });
+
+        for (let trip of trips) {
+            departuresByMinute[minutesSinceMidnight(trip.started_at)].push(trip);
+            arrivalsByMinute[minutesSinceMidnight(trip.ended_at)].push(trip);
+        }
+    }
+
+    onMount(() => {
+        initMap();
+    });
+</script>
+
+<h1>Boston Bike Traffic</h1>
+
+<label>
+    Filter by time:
+    <input type="range" min="-1" max="1440" bind:value={timeFilter} />
+    {#if timeFilter !== -1}
+        <time>{timeFilterLabel}</time>
+    {:else}
+        <em>(any time)</em>
+    {/if}
+</label>
+
+<div id="map">
+    <svg>
+        {#key mapViewChanged}
+            {#if isochrone}
+                {#each isochrone.features as feature}
+                    <path
+                        d={geoJSONPolygonToPath(feature)}
+                        fill="#{feature.properties.fillColor}"
+                        fill-opacity="0.2"
+                        stroke="#000000"
+                        stroke-opacity="0.5"
+                        stroke-width="1"
+                    >
+                        <title>{feature.properties.contour} minutes of biking</title>
+                    </path>
+                {/each}
+            {/if}
+            {#each filteredStations as station}
+                <circle
+                    {...getCoords(station)}
+                    r={radiusScale(station.totalTraffic)}
+                    style="--departure-ratio: {stationFlow(station.departures / station.totalTraffic)}"
+                    class={station?.Number === selectedStation?.Number ? "selected" : ""}
+                    on:mousedown={() => selectedStation = selectedStation?.Number !== station?.Number ? station : null}
+                >
+                    <title>{station.totalTraffic} trips ({station.departures} departures, {station.arrivals} arrivals)</title>
+                </circle>
             {/each}
-        </div>
-    </aside>
+        {/key}
+    </svg>
 </div>
 
-
-{#if loading}
-    <p>Loading...</p>
-{:else if error}
-    <p>Something went wrong: {error.message}</p>
-{:else}
-    <section class="github-stats">
-        <h2>My GitHub</h2>
-        <dl>
-            <dt>FOLLOWERS</dt>
-            <dd>{githubData.followers}</dd>
-            <dt>FOLLOWING</dt>
-            <dd>{githubData.following}</dd>
-            <dt>PUBLIC REPOSITORIES</dt>
-            <dd>{githubData.public_repos}</dd>
-        </dl>
-    </section>
-{/if}
-
-
-<h2>Recent Projects</h2>
-<div class="projects highlights">
-    {#each projects.slice(0, 3) as p}
-    <Project data={p} />
-    {/each}
+<div class="legend">
+    <div style="--departure-ratio: 1">More departures</div>
+    <div style="--departure-ratio: 0.5">Balanced</div>
+    <div style="--departure-ratio: 0">More arrivals</div>
 </div>
+
+<style>
+    @import url("$lib/global.css");
+
+    #map {
+        flex: 1;
+    }
+
+    #map svg {
+        position: absolute;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+
+    #map svg circle, .legend > div {
+        --color-departures: steelblue;
+        --color-arrivals: darkorange;
+        --color: color-mix(
+            in oklch,
+            var(--color-departures) calc(100% * var(--departure-ratio)),
+            var(--color-arrivals)
+        );
+        fill: var(--color);
+    }
+
+    #map svg circle {
+        fill-opacity: 0.6;
+        stroke: white;
+        pointer-events: auto;
+    }
+
+    #map svg:has(circle.selected) circle:not(.selected) {
+        opacity: 0.3;
+    }
+
+    path {
+        pointer-events: auto;
+    }
+
+    .legend {
+        display: flex;
+        gap: 0.5em;
+        margin-top: 0.5em;
+    }
+
+    .legend > div {
+        flex: 1;
+        padding: 0.4em;
+        text-align: center;
+        background-color: var(--color);
+        color: white;
+    }
+</style>
