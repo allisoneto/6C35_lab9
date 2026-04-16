@@ -15,6 +15,8 @@
 
     const departuresByMinute = Array.from({length: 1440}, () => []);
     const arrivalsByMinute = Array.from({length: 1440}, () => []);
+    let allDepartures = new Map();
+    let allArrivals = new Map();
 
     $: map?.on("move", () => mapViewChanged++);
 
@@ -22,11 +24,11 @@
         .toLocaleString("en", {timeStyle: "short"});
 
     $: filteredDepartures = timeFilter === -1
-        ? d3.rollup(departuresByMinute.flat(), v => v.length, d => d.start_station_id)
+        ? allDepartures
         : d3.rollup(filterByMinute(departuresByMinute, timeFilter), v => v.length, d => d.start_station_id);
 
     $: filteredArrivals = timeFilter === -1
-        ? d3.rollup(arrivalsByMinute.flat(), v => v.length, d => d.end_station_id)
+        ? allArrivals
         : d3.rollup(filterByMinute(arrivalsByMinute, timeFilter), v => v.length, d => d.end_station_id);
 
     $: filteredStations = stations.map(station => {
@@ -146,6 +148,8 @@
             departuresByMinute[minutesSinceMidnight(trip.started_at)].push(trip);
             arrivalsByMinute[minutesSinceMidnight(trip.ended_at)].push(trip);
         }
+        allDepartures = d3.rollup(trips, v => v.length, d => d.start_station_id);
+        allArrivals = d3.rollup(trips, v => v.length, d => d.end_station_id);
     }
 
     onMount(() => {
@@ -172,7 +176,7 @@
                 {#each isochrone.features as feature}
                     <path
                         d={geoJSONPolygonToPath(feature)}
-                        fill="#{feature.properties.fillColor}"
+                        fill={feature.properties.fillColor}
                         fill-opacity="0.2"
                         stroke="#000000"
                         stroke-opacity="0.5"
@@ -186,7 +190,7 @@
                 <circle
                     {...getCoords(station)}
                     r={radiusScale(station.totalTraffic)}
-                    style="--departure-ratio: {stationFlow(station.departures / station.totalTraffic)}"
+                    style="--departure-ratio: {station.totalTraffic > 0 ? stationFlow(station.departures / station.totalTraffic) : 0.5}"
                     class={station?.Number === selectedStation?.Number ? "selected" : ""}
                     on:mousedown={() => selectedStation = selectedStation?.Number !== station?.Number ? station : null}
                 >
